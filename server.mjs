@@ -3,19 +3,29 @@ import {mkdirSync, readFileSync, renameSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chart} from './chart.mjs';
+import {demoSessions, demoState} from './demo.mjs';
 import {closingEntries, parent, sum} from './ledger.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const dataDir = join(root, 'data');
 const dataFile = join(dataDir, 'trebolium.json');
-const host = '127.0.0.1';
-const port = Number(process.env.TREBOLIUM_PORT || 4173);
+const demo = process.argv.includes('--demo');
+const externalUrl = demo && (process.env.TREBOLIUM_DEMO_ORIGIN || process.env.RENDER_EXTERNAL_URL);
+const external = externalUrl ? new URL(externalUrl) : null;
+if (external && external.protocol !== 'https:') throw new Error('El dominio público debe usar HTTPS.');
+const host = external ? '0.0.0.0' : '127.0.0.1';
+const port = Number(process.env.TREBOLIUM_PORT || (external && process.env.PORT) || 4173);
+const sessions = demo ? demoSessions(Boolean(external)) : null;
+const allowedHosts = new Set(['127.0.0.1:' + port, 'localhost:' + port]);
+if (external) allowedHosts.add(external.host);
 let state;
-try {
-  state = JSON.parse(readFileSync(dataFile, 'utf8'));
-} catch (error) {
-  if (error.code !== 'ENOENT') throw error;
-  state = {accounts: chart, entries: [], models: [], indices: [], revision: 0, nextId: 1};
+if (!demo) {
+  try {
+    state = JSON.parse(readFileSync(dataFile, 'utf8'));
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    state = {accounts: chart, entries: [], models: [], indices: [], revision: 0, nextId: 1};
+  }
 }
 
 class InputError extends Error {}
@@ -189,28 +199,45 @@ async function readBody(request) {
 
 const server = http.createServer(async (request, response) => {
   try {
-    const allowedHosts = [host + ':' + port, 'localhost:' + port];
-    if (!allowedHosts.includes(request.headers.host)) return json(response, 403, {error: 'Usá la dirección local de Trebolium.'});
-    const url = new URL(request.url, 'http://' + request.headers.host);
-    if (request.method === 'GET' && url.pathname === '/api/state') return json(response, 200, state);
+    if (demo && request.method === 'GET' && request.url === '/healthz') return json(response, 200, {ok: true});
+    const requestHost = request.headers.host;
+    if (!allowedHosts.has(requestHost)) return json(response, 403, {error: 'Dirección de Trebolium inválida.'});
+    const origin = requestHost === external?.host ? external.origin : 'http://' + requestHost;
+    const url = new URL(request.url, origin);
+    if (request.method === 'GET' && url.pathname === '/api/state') {
+      return json(response, 200, sessions ? sessions.get(request, response, true).state : state);
+    }
     if (request.method === 'POST' && url.pathname === '/api/action') {
-      if (request.headers.origin && request.headers.origin !== url.origin) {
+      const requestOrigin = request.headers.origin;
+      if ((demo || requestOrigin) && requestOrigin !== origin) {
         return json(response, 403, {error: 'Origen inválido.'});
       }
       requireInput(request.headers['content-type'] === 'application/json', 'Formato inválido.');
       const body = await readBody(request);
-      requireInput(body && Object.hasOwn(actions, body.action), 'Acción desconocida.');
-      if (body.revision !== state.revision) {
+      const reset = demo && body?.action === 'reset-demo';
+      requireInput(body && (reset || Object.hasOwn(actions, body.action)), 'Acción desconocida.');
+      const session = sessions?.get(request, response);
+      if (demo && !session) return json(response, 409, {error: 'La sesión de demo terminó. Recargá la página para empezar de nuevo.'});
+      const current = session ? session.state : state;
+      if (body.revision !== current.revision) {
         return json(response, 409, {error: 'Los datos cambiaron. Recargá la página antes de reintentar.'});
       }
-      const updated = structuredClone(state);
-      actions[body.action](updated, body);
-      updated.revision++;
-      mkdirSync(dataDir, {recursive: true});
-      writeFileSync(dataFile + '.tmp', JSON.stringify(updated, null, 2), 'utf8');
-      renameSync(dataFile + '.tmp', dataFile);
-      state = updated;
-      return json(response, 200, state);
+      const updated = reset ? demoState(current.revision + 1) : structuredClone(current);
+      if (!reset) {
+        actions[body.action](updated, body);
+        updated.revision++;
+      }
+      if (session) {
+        requireInput(Buffer.byteLength(JSON.stringify(updated)) <= 128 * 1024,
+          'Alcanzaste el límite de esta demo. Podés reiniciarla para seguir probando.');
+        session.state = updated;
+      } else {
+        mkdirSync(dataDir, {recursive: true});
+        writeFileSync(dataFile + '.tmp', JSON.stringify(updated, null, 2), 'utf8');
+        renameSync(dataFile + '.tmp', dataFile);
+        state = updated;
+      }
+      return json(response, 200, updated);
     }
     const file = staticFiles.get(url.pathname);
     if (request.method !== 'GET' || !file) return json(response, 404, {error: 'Página no encontrada.'});
@@ -228,4 +255,4 @@ const server = http.createServer(async (request, response) => {
   }
 });
 
-server.listen(port, host, () => console.log('Trebolium disponible en http://' + host + ':' + port));
+server.listen(port, host, () => console.log('Trebolium disponible en ' + (external?.origin || 'http://' + host + ':' + port)));

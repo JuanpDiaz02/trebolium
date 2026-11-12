@@ -15,6 +15,16 @@ Programa local de contabilidad para Los Tréboles SRL. La pantalla inicial reún
 
 El proyecto funciona con las bibliotecas incluidas en Node.js y con los archivos del navegador. Si el puerto está ocupado, ejecutá `$env:TREBOLIUM_PORT = '4174'; npm start` y abrí el puerto 4174.
 
+## Probar y publicar la demo
+
+Ejecutá `npm run demo` y abrí [Trebolium local](http://127.0.0.1:4173). El Libro diario arranca con tres asientos ficticios y hay un modelo listo para reutilizar. Cada navegador recibe su propia sesión temporal. El botón **Restablecer demo** recupera los ejemplos y borra los cambios de esa sesión.
+
+Cuando el commit con `render.yaml` esté en GitHub, usá el botón para desplegar la demo en el plan Free. Si Render te pide conectar GitHub, elegí el repositorio `JuanpDiaz02/trebolium`. Revisá el servicio **trebolium-demo** y confirmá el despliegue. Compartí la URL HTTPS que Render muestre cuando el servicio esté activo.
+
+[![Desplegar en Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2FJuanpDiaz02%2Ftrebolium)
+
+La demo funciona con datos ficticios en memoria. Los cambios se pierden al vencer la sesión o reiniciarse el servicio. El plan Free puede tardar en responder al volver de un período de inactividad. [Límites del plan Free](https://render.com/docs/free)
+
 ## Qué incluye
 
 - Plan de cuentas jerárquico con búsqueda y alta, edición y baja de cuentas. Los grupos organizan las cuentas imputables.

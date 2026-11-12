@@ -650,6 +650,23 @@ function renderInflation() {
 }
 
 function setupShell() {
+  if (state.demo) {
+    $('#workspace-label').textContent = 'Espacio de demostración';
+    $('#demo-banner').hidden = false;
+    $('#reset-demo').onclick = () => {
+      modal('Restablecer demo', '<form><p>Se borrarán los cambios de esta sesión y volverán los asientos de ejemplo.</p>' +
+        '<p class="error" role="alert"></p><button class="btn primary" type="submit">Restablecer ejemplos</button></form>');
+      handleSubmit($('form', dialog), async () => {
+        await mutate('reset-demo', {});
+        for (const key of Object.keys(filters)) delete filters[key];
+        searchTerm = '';
+        expanded.clear();
+        dialog.close();
+        render();
+        notify('Demo restablecida.');
+      });
+    };
+  }
   const search = $('#global');
   const suggestions = $('#suggestions');
   $('#search-label').setAttribute('aria-label', 'Buscar una sección');

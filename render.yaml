@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: trebolium-demo
+    runtime: node
+    plan: free
+    autoDeployTrigger: off
+    buildCommand: npm install
+    startCommand: npm run demo
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: ">=24.0.0 <25"

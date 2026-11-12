@@ -37,6 +37,8 @@ svg.icon { width: 20px; height: 20px; display: inline-block; flex: none; vertica
 .status-dot { width: 8px; height: 8px; background: #a7d7a0; border-radius: 100%; }
 .shell { margin-left: var(--sidebar); min-height: 100vh; display: flex; flex-direction: column; }
 .topbar { min-height: 66px; background: #fff; border-bottom: 1px solid var(--line); padding: 10px 32px; display: flex; gap: 19px; align-items: center; position: sticky; top: 0; z-index: 4; }
+.demo-banner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 14px; padding: 8px 32px; background: #eaf4e9; border-bottom: 1px solid var(--line); }
+.demo-banner p { margin: 0; font-size: 13px; }
 .crumb { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin-right: auto; }
 .crumb strong { color: #21392f; }
 .crumb .icon { width: 16px; height: 16px; }
@@ -132,7 +134,7 @@ dialog .card-head { justify-content: space-between; }
 #toast.error { background: #8b2822; }
 @media (max-width: 1100px) {
   :root { --sidebar: 194px; }
-  main, .topbar, .footer { padding-left: 20px; padding-right: 20px; }
+  main, .topbar, .demo-banner, .footer { padding-left: 20px; padding-right: 20px; }
   .split { gap: 12px; }
   .pad { padding: 13px; }
 }
@@ -145,7 +147,7 @@ dialog .card-head { justify-content: space-between; }
   #menu { display: inline-flex; }
 }
 @media (max-width: 620px) {
-  main, .topbar, .footer { padding-left: 12px; padding-right: 12px; }
+  main, .topbar, .demo-banner, .footer { padding-left: 12px; padding-right: 12px; }
   .topbar { gap: 8px; }
   .global-search input { width: 125px; }
   kbd, .crumb .icon, .crumb .area { display: none; }
