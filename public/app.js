@@ -191,11 +191,14 @@ function drawTree() {
     return '<ul class="tree">' + visible.map(item => {
       const open = item.group && (expanded.has(item.code) || query);
       const extra = item.group ? icon('arrow', 'tree-caret ' + (open ? 'open' : '')) : '';
+      const label = extra + icon(item.group ? 'folder' : 'close') +
+        '<span class="tree-code">' + item.code + '</span><span>' + escape(item.name) + '</span>';
+      const name = item.group
+        ? '<button type="button" class="tree-name" data-group="' + item.code +
+          '" aria-expanded="' + Boolean(open) + '">' + label + '</button>'
+        : '<div class="tree-name">' + label + '</div>';
       return '<li><div class="tree-row ' + (prefix ? '' : 'root') + '">' +
-        '<button type="button" class="tree-name" data-code="' + item.code + '"' +
-        (item.group ? ' aria-expanded="' + Boolean(open) + '"' : '') + '>' +
-        extra + icon(item.group ? 'folder' : 'close') + '<span class="tree-code">' + item.code + '</span>' +
-        '<span>' + escape(item.name) + '</span></button><button type="button" class="tree-edit" data-edit="' + item.code +
+        name + '<button type="button" class="tree-edit" data-edit="' + item.code +
         '" title="Editar cuenta" aria-label="Editar ' + escape(item.name) + '">' + icon('edit') + '</button></div>' +
         (open ? branch(item.code) : '') + '</li>';
     }).join('') + '</ul>';
@@ -205,18 +208,13 @@ function drawTree() {
   tree.onclick = event => {
     const edit = event.target.closest('[data-edit]');
     if (edit) return editAccount(account(edit.dataset.edit));
-    const name = event.target.closest('[data-code]');
-    if (!name) return;
-    const item = account(name.dataset.code);
-    if (!item.group) {
-      filters.mayor = {...reportDefaults('mayor'), codes: [item.code]};
-      location.hash = 'mayor';
-      return;
-    }
-    if (expanded.has(item.code)) expanded.delete(item.code);
-    else expanded.add(item.code);
+    const group = event.target.closest('[data-group]');
+    if (!group) return;
+    const code = group.dataset.group;
+    if (expanded.has(code)) expanded.delete(code);
+    else expanded.add(code);
     drawTree();
-    tree.querySelector('[data-code="' + item.code + '"]')?.focus();
+    tree.querySelector('[data-group="' + code + '"]')?.focus();
   };
 }
 

@@ -82,7 +82,7 @@ main { width: 100%; max-width: 1720px; margin: 0 auto; padding: 27px 32px; flex:
 .tree-row.root { background: #f6faf6; border: 1px solid #e5ede5; border-radius: 8px; }
 .tree-name, .tree-edit { background: transparent; border: 0; border-radius: 7px; }
 .tree-name { flex: 1; display: flex; align-items: center; text-align: left; gap: 8px; padding: 8px 7px; font-size: 13px; min-width: 0; }
-.tree-name:hover, .tree-edit:hover { background: var(--mint); }
+button.tree-name:hover, .tree-edit:hover { background: var(--mint); }
 .tree-name .icon { color: var(--green); width: 16px; height: 16px; }
 .tree-name .tree-caret { width: 12px; height: 12px; }
 .tree-caret.open { transform: rotate(90deg); }
