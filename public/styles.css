@@ -39,6 +39,12 @@ svg.icon { width: 20px; height: 20px; display: inline-block; flex: none; vertica
 .topbar { min-height: 66px; background: #fff; border-bottom: 1px solid var(--line); padding: 10px 32px; display: flex; gap: 19px; align-items: center; position: sticky; top: 0; z-index: 4; }
 .demo-banner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 14px; padding: 8px 32px; background: #eaf4e9; border-bottom: 1px solid var(--line); }
 .demo-banner p { margin: 0; font-size: 13px; }
+body.auth .sidebar, body.auth .topbar, body.auth .footer { display: none; }
+body.auth .shell { margin-left: 0; }
+.auth-card { max-width: 460px; margin: 7vh auto; }
+.auth-card .field { margin-bottom: 12px; }
+.audit-details { max-width: min(360px, 65vw); }
+.audit-details pre { max-height: 240px; overflow: auto; }
 .crumb { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin-right: auto; }
 .crumb strong { color: #21392f; }
 .crumb .icon { width: 16px; height: 16px; }

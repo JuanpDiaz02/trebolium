@@ -5,12 +5,16 @@ import {fileURLToPath} from 'node:url';
 import {chart} from './chart.mjs';
 import {demoSessions, demoState} from './demo.mjs';
 import {closingEntries, parent, sum} from './ledger.mjs';
+import {createPilot, PilotError} from './pilot.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const dataDir = join(root, 'data');
 const dataFile = join(dataDir, 'trebolium.json');
 const demo = process.argv.includes('--demo');
-const externalUrl = demo && (process.env.TREBOLIUM_DEMO_ORIGIN || process.env.RENDER_EXTERNAL_URL);
+const pilotMode = process.argv.includes('--pilot');
+if (demo && pilotMode) throw new Error('Elegí un solo modo de Trebolium.');
+const externalUrl = (demo || pilotMode) &&
+  ((pilotMode ? process.env.TREBOLIUM_PILOT_ORIGIN : process.env.TREBOLIUM_DEMO_ORIGIN) || process.env.RENDER_EXTERNAL_URL);
 const external = externalUrl ? new URL(externalUrl) : null;
 if (external && external.protocol !== 'https:') throw new Error('El dominio público debe usar HTTPS.');
 const host = external ? '0.0.0.0' : '127.0.0.1';
@@ -19,7 +23,16 @@ const sessions = demo ? demoSessions(Boolean(external)) : null;
 const allowedHosts = new Set(['127.0.0.1:' + port, 'localhost:' + port]);
 if (external) allowedHosts.add(external.host);
 let state;
-if (!demo) {
+let pilot;
+if (pilotMode) {
+  if (!process.env.DATABASE_URL) throw new Error('Configurá DATABASE_URL para iniciar el piloto.');
+  const {Pool} = await import('pg');
+  const pool = new Pool({connectionString: process.env.DATABASE_URL, max: 5, connectionTimeoutMillis: 5000,
+    statement_timeout: 10000, application_name: 'trebolium-pilot'});
+  pool.on('error', error => console.error('Conexión inactiva del piloto cerrada:', error.code || error.name));
+  pilot = await createPilot(pool, {secure: Boolean(external), bootstrapEmail: process.env.TREBOLIUM_ADMIN_EMAIL,
+    bootstrapToken: process.env.TREBOLIUM_BOOTSTRAP_TOKEN});
+} else if (!demo) {
   try {
     state = JSON.parse(readFileSync(dataFile, 'utf8'));
   } catch (error) {
@@ -182,6 +195,12 @@ function json(response, code, body) {
   response.end(JSON.stringify(body));
 }
 
+function requireOrigin(request, origin, required) {
+  const requestOrigin = request.headers.origin;
+  if ((required || requestOrigin) && requestOrigin !== origin) throw new PilotError(403, 'Origen inválido.');
+  requireInput(request.headers['content-type'] === 'application/json', 'Formato inválido.');
+}
+
 async function readBody(request) {
   const chunks = [];
   let bytes = 0;
@@ -199,23 +218,42 @@ async function readBody(request) {
 
 const server = http.createServer(async (request, response) => {
   try {
-    if (demo && request.method === 'GET' && request.url === '/healthz') return json(response, 200, {ok: true});
+    if ((demo || pilot) && request.method === 'GET' && request.url === '/healthz') {
+      if (pilot) {
+        try {
+          await pilot.health();
+        } catch {
+          return json(response, 503, {ok: false});
+        }
+      }
+      return json(response, 200, {ok: true});
+    }
     const requestHost = request.headers.host;
     if (!allowedHosts.has(requestHost)) return json(response, 403, {error: 'Dirección de Trebolium inválida.'});
     const origin = requestHost === external?.host ? external.origin : 'http://' + requestHost;
     const url = new URL(request.url, origin);
     if (request.method === 'GET' && url.pathname === '/api/state') {
+      if (pilot) return json(response, 200, await pilot.readState(request));
       return json(response, 200, sessions ? sessions.get(request, response, true).state : state);
     }
-    if (request.method === 'POST' && url.pathname === '/api/action') {
-      const requestOrigin = request.headers.origin;
-      if ((demo || requestOrigin) && requestOrigin !== origin) {
-        return json(response, 403, {error: 'Origen inválido.'});
+    if (pilot && url.pathname.startsWith('/api/pilot/')) {
+      const endpoint = url.pathname.slice('/api/pilot/'.length);
+      if (request.method === 'GET' && ['audit', 'members'].includes(endpoint)) {
+        return json(response, 200, await pilot.get(request, endpoint));
       }
-      requireInput(request.headers['content-type'] === 'application/json', 'Formato inválido.');
+      if (request.method === 'POST' && ['login', 'accept', 'logout', 'invite', 'revoke-invite', 'disable-user'].includes(endpoint)) {
+        requireOrigin(request, origin, true);
+        const body = await readBody(request);
+        requireInput(body && typeof body === 'object' && !Array.isArray(body), 'Formato inválido.');
+        return json(response, 200, await pilot.post(request, response, endpoint, body));
+      }
+    }
+    if (request.method === 'POST' && url.pathname === '/api/action') {
+      requireOrigin(request, origin, demo || pilotMode);
       const body = await readBody(request);
       const reset = demo && body?.action === 'reset-demo';
       requireInput(body && (reset || Object.hasOwn(actions, body.action)), 'Acción desconocida.');
+      if (pilot) return json(response, 200, await pilot.mutate(request, body, actions[body.action]));
       const session = sessions?.get(request, response);
       if (demo && !session) return json(response, 409, {error: 'La sesión de demo terminó. Recargá la página para empezar de nuevo.'});
       const current = session ? session.state : state;
@@ -248,8 +286,10 @@ const server = http.createServer(async (request, response) => {
     });
     response.end(readFileSync(join(root, file[0])));
   } catch (error) {
+    if (error instanceof PilotError) return json(response, error.status, {error: error.message});
     if (error instanceof InputError) return json(response, 400, {error: error.message});
-    console.error(error);
+    if (pilotMode) console.error('Error interno del piloto:', error.code || error.name);
+    else console.error(error);
     if (!response.headersSent) json(response, 500, {error: 'No se pudo completar la operación.'});
     else response.end();
   }

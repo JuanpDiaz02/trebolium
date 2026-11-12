@@ -64,6 +64,9 @@ let toastTimer;
 let searchTerm = '';
 const expanded = new Set();
 const filters = {};
+const canWrite = () => state.user?.role !== 'consulta';
+const isAdmin = () => state.user?.role === 'administrador';
+const canClose = () => !state.user || isAdmin();
 const account = code => state.accounts.find(item => item.code === code);
 const accountLabel = code => code + ' · ' + account(code).name;
 const postings = () => state.accounts.filter(item => !item.group).sort(accountOrder);
@@ -84,6 +87,7 @@ async function mutate(action, data) {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({action, revision: state.revision, ...data})
   });
+  if (response.status === 401 && state.user) location.reload();
   const result = await response.json();
   if (!response.ok) throw new Error(result.error);
   state = result;
@@ -133,14 +137,19 @@ function navLink(key) {
 
 function render() {
   route = location.hash.slice(1);
-  if (!Object.hasOwn(pages, route)) route = 'plan';
-  document.title = 'Trebolium · ' + pages[route][0];
+  const team = route === 'equipo' && isAdmin();
+  if (!team && !Object.hasOwn(pages, route)) route = 'plan';
+  const title = team ? 'Equipo y auditoría' : pages[route][0];
+  document.title = 'Trebolium · ' + title;
   $('#nav').innerHTML = '<div class="nav-label">ADMINISTRACIÓN</div>' +
     ['plan', 'manuales', 'modelos'].map(navLink).join('') + '<div class="nav-label">LIBROS E INFORMES</div>' +
     ['diario', 'mayor', 'balance', 'resultados'].map(navLink).join('') + '<div class="nav-label">EJERCICIO</div>' +
-    ['cierre', 'eliminar', 'inflacion'].map(navLink).join('');
-  $('#crumb').innerHTML = '<span class="area">Contabilidad</span>' + icon('arrow') + '<strong>' + pages[route][0] + '</strong>';
-  if (route === 'plan') renderPlan();
+    ['cierre', 'eliminar', 'inflacion'].map(navLink).join('') +
+    (isAdmin() ? '<div class="nav-label">PILOTO INTERNO</div><a class="nav-link" href="#equipo"' +
+      (team ? ' aria-current="page"' : '') + '>' + icon('plan') + 'Equipo y auditoría</a>' : '');
+  $('#crumb').innerHTML = '<span class="area">Contabilidad</span>' + icon('arrow') + '<strong>' + title + '</strong>';
+  if (team) void renderTeam();
+  else if (route === 'plan') renderPlan();
   else if (route === 'modelos') renderModels();
   else if (route === 'cierre' || route === 'eliminar') renderClose();
   else if (route === 'inflacion') renderInflation();
@@ -158,7 +167,7 @@ function renderPlan() {
   content.innerHTML = '<section class="hero"><img src="/logo.png" alt=""><span class="eyebrow">Trebolium · Los Tréboles SRL</span>' +
     '<h1>Contando cada hoja.</h1><p>Una cuenta clara nunca se deshoja.</p></section>' +
     '<div class="page-heading"><div><h2>Plan de cuentas</h2><p>' + pages.plan[2] + '</p></div>' +
-    button('Nueva cuenta', 'plus', 'primary', 'id="new-account"') + '</div>' +
+    (canWrite() ? button('Nueva cuenta', 'plus', 'primary', 'id="new-account"') : '') + '</div>' +
     '<div class="split"><section class="card">' + cardHead('folder', 'Plan de cuentas', 'Explorá la estructura de tu contabilidad') +
     '<div class="pad"><div class="tree-tools"><input type="search" id="tree-search" aria-label="Buscar cuenta" placeholder="Buscar por código o nombre…" value="' + escape(searchTerm) + '">' +
     iconButton('models', 'Expandir o contraer todos los grupos', 'id="expand-all"') + '</div><div id="tree"></div>' +
@@ -167,7 +176,7 @@ function renderPlan() {
     '<div class="pad actions-grid">' + tiles.map(key => '<a class="shortcut ' + (key === 'eliminar' ? 'warn' : '') +
     '" href="#' + key + '"><span class="tile-icon">' + icon(pages[key][1]) + '</span><span>' + (shortcutNames[key] || pages[key][0]) + '</span></a>').join('') +
     '</div></section></div>';
-  $('#new-account').onclick = () => editAccount();
+  if (canWrite()) $('#new-account').onclick = () => editAccount();
   $('#tree-search').oninput = event => {
     searchTerm = event.target.value;
     drawTree();
@@ -198,8 +207,8 @@ function drawTree() {
           '" aria-expanded="' + Boolean(open) + '">' + label + '</button>'
         : '<div class="tree-name">' + label + '</div>';
       return '<li><div class="tree-row ' + (prefix ? '' : 'root') + '">' +
-        name + '<button type="button" class="tree-edit" data-edit="' + item.code +
-        '" title="Editar cuenta" aria-label="Editar ' + escape(item.name) + '">' + icon('edit') + '</button></div>' +
+        name + (canWrite() ? '<button type="button" class="tree-edit" data-edit="' + item.code +
+        '" title="Editar cuenta" aria-label="Editar ' + escape(item.name) + '">' + icon('edit') + '</button>' : '') + '</div>' +
         (open ? branch(item.code) : '') + '</li>';
     }).join('') + '</ul>';
   }
@@ -373,12 +382,12 @@ function renderReport() {
     (key === 'mayor' ? field('Cuentas', '<select name="codes" multiple size="4">' + options(f.codes) +
       '</select><span class="hint">Sin selección se muestran todas las cuentas con movimientos o saldo. Usá Ctrl para elegir varias.</span>', 'wide') : '') +
     '</div><div class="toolbar"><button class="btn primary" type="submit">' + icon('search') + ' Buscar</button>' +
-    (manual ? button('Nuevo asiento manual', 'plus', '', 'id="new-entry"') : '') +
+    (manual && canWrite() ? button('Nuevo asiento manual', 'plus', '', 'id="new-entry"') : '') +
     button('Exportar CSV', 'download', '', 'id="report-export"') + '<span class="hint end">Importes en ARS</span></div>' +
     '<p class="error" role="alert"></p></form><div id="report-output"></div></section>';
   const result = reportData(key, f);
   const {headers, rows} = result;
-  if (manual) {
+  if (manual && canWrite()) {
     const entries = state.entries.filter(entry => ['manual', 'inflation'].includes(entry.type) && entry.date >= f.from &&
       entry.date <= f.to && normalize(entry.memo).includes(normalize(f.memo))).sort(order);
     const rowsWithActions = [];
@@ -420,20 +429,21 @@ function renderReport() {
 function renderModels() {
   const memo = filters.modelos?.memo || '';
   const matching = state.models.filter(model => normalize(model.memo).includes(normalize(memo)));
-  const rows = matching.map(model => [model.memo, model.lines.length, safeCell(
+  const rows = matching.map(model => [model.memo, model.lines.length, ...(canWrite() ? [safeCell(
     button('Usar modelo', 'plus', '', 'data-use="' + model.id + '"') + ' ' +
     iconButton('edit', 'Editar modelo', 'data-model="' + model.id + '"') + ' ' +
     iconButton('trash', 'Eliminar modelo', 'data-remove-model="' + model.id + '"')
-  )]);
+  )] : [])]);
   content.innerHTML = heading('modelos') + '<section class="card pad"><form id="model-search"><div class="controls">' +
     field('Leyenda del asiento modelo', '<input name="memo" type="search" placeholder="Ingresá la leyenda" value="' + escape(memo) + '">') +
     '</div><div class="toolbar"><button type="submit" class="btn primary">' + icon('search') + ' Buscar</button>' +
-    button('Nuevo asiento modelo', 'plus', '', 'id="new-model"') + '</div></form><div id="models-list">' +
-    table(['Leyenda', 'Líneas', 'Acciones'], rows) + '</div></section>';
+    (canWrite() ? button('Nuevo asiento modelo', 'plus', '', 'id="new-model"') : '') + '</div></form><div id="models-list">' +
+    table(canWrite() ? ['Leyenda', 'Líneas', 'Acciones'] : ['Leyenda', 'Líneas'], rows) + '</div></section>';
   handleSubmit($('#model-search'), data => {
     filters.modelos = {memo: data.get('memo').trim()};
     render();
   });
+  if (!canWrite()) return;
   $('#new-model').onclick = () => editEntry(undefined, true);
   $('#models-list').onclick = event => {
     const action = event.target.closest('[data-use],[data-model],[data-remove-model]');
@@ -554,6 +564,10 @@ function closeSummary(entries) {
 }
 
 function renderClose() {
+  if (!canClose()) {
+    content.innerHTML = heading(route) + '<p class="notice">Esta operación requiere el rol Administrador.</p>';
+    return;
+  }
   const closeDate = state.entries.filter(entry => entry.closeDate).map(entry => entry.closeDate).sort().at(-1);
   if (route === 'eliminar') {
     content.innerHTML = heading(route) + '<section class="card pad">' +
@@ -608,6 +622,10 @@ function indexDialog() {
 }
 
 function renderInflation() {
+  if (!canWrite()) {
+    content.innerHTML = heading(route) + '<p class="notice">Esta operación requiere permiso de edición.</p>';
+    return;
+  }
   content.innerHTML = heading(route) + '<section class="card pad"><p class="notice"><strong>Consideraciones.</strong> Ingresá los importes de una hoja de trabajo ya calculada. El historial sirve para registrar los índices usados. Cargá el ajuste de Mercaderías por separado desde Asientos manuales.</p>' +
     '<form id="inflation-form"><div class="form-grid">' +
     field('Leyenda', '<input name="memo" value="Ajuste por inflación" maxlength="150" required>') +
@@ -647,7 +665,107 @@ function renderInflation() {
   });
 }
 
+const roleNames = {consulta: 'Consulta', operador: 'Operador', administrador: 'Administrador'};
+
+async function pilotRequest(endpoint, body) {
+  const response = await fetch('/api/pilot/' + endpoint, body ? {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+  } : {});
+  if (response.status === 401 && state?.user && endpoint !== 'login') location.reload();
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error);
+  return result;
+}
+
+function renderSignIn(inviteToken = '') {
+  document.body.classList.add('auth');
+  const invite = Boolean(inviteToken);
+  const title = invite ? 'Activar cuenta' : 'Ingresar a Trebolium';
+  content.innerHTML = '<section class="card pad auth-card"><span class="eyebrow">Los Tréboles SRL · Piloto interno</span>' +
+    '<h1>' + title + '</h1><form>' +
+    field('Correo', '<input name="email" type="email" maxlength="254" autocomplete="username" required>') +
+    field('Contraseña', '<input name="password" type="password" autocomplete="' +
+      (invite ? 'new-password" minlength="12' : 'current-password') + '" maxlength="256" required>') +
+    (invite ? '<p class="hint">Usá el correo al que se envió la invitación y elegí al menos 12 caracteres.</p>' : '') +
+    '<p class="error" role="alert"></p><button class="btn primary" type="submit">' + title + '</button></form></section>';
+  handleSubmit($('form', content), async data => {
+    const credentials = {email: data.get('email'), password: data.get('password')};
+    if (invite) await pilotRequest('accept', {...credentials, token: inviteToken});
+    await pilotRequest('login', credentials);
+    location.reload();
+  });
+}
+
+async function renderTeam() {
+  content.innerHTML = '<h1>Equipo y auditoría</h1><p>Cargando…</p>';
+  try {
+    const [members, audit] = await Promise.all([pilotRequest('members'), pilotRequest('audit')]);
+    if (route !== 'equipo') return;
+    const roles = Object.entries(roleNames).map(([value, label]) => '<option value="' + value + '">' + label + '</option>').join('');
+    const users = members.users.map(user => [user.email, roleNames[user.role], user.active ? 'Activa' : 'Desactivada',
+      safeCell(user.active && user.email !== state.user.email ?
+        button('Desactivar', '', 'danger', 'data-disable="' + escape(user.email) + '"') : '')]);
+    const invites = members.invites.map(invite => [invite.email, roleNames[invite.role],
+      new Date(invite.expires_at).toLocaleString('es-AR'), safeCell(button('Revocar', '', 'danger', 'data-revoke="' + escape(invite.email) + '"'))]);
+    const auditRows = audit.map(event => [new Date(event.occurred_at).toLocaleString('es-AR'), event.actor, event.action,
+      safeCell('<details class="audit-details"><summary>Ver cambios</summary><pre>' +
+        escape(JSON.stringify(event.details, null, 2)) + '</pre></details>')]);
+    content.innerHTML = '<h1>Equipo y auditoría</h1><section class="card pad"><h2>Invitar al equipo</h2>' +
+      '<form id="invite-form"><div class="controls">' +
+      field('Correo', '<input type="email" name="email" maxlength="254" required>') +
+      field('Rol', '<select name="role">' + roles + '</select>') +
+      '<button class="btn primary" type="submit">Generar invitación</button></div>' +
+      '<p class="hint">La invitación vence en 48 horas. Compartí el enlace solo con la persona invitada.</p>' +
+      '<p class="error" role="alert"></p></form></section>' +
+      '<section class="card pad stacked" id="team-users"><h2>Cuentas</h2>' +
+      table(['Correo', 'Rol', 'Estado', 'Acciones'], users) + '<h2>Invitaciones pendientes</h2>' +
+      table(['Correo', 'Rol', 'Vence', 'Acciones'], invites) + '</section>' +
+      '<section class="card pad stacked"><h2>Últimos cambios</h2>' +
+      table(['Fecha y hora', 'Cuenta', 'Operación', 'Detalle'], auditRows) + '</section>';
+    handleSubmit($('#invite-form'), async data => {
+      const result = await pilotRequest('invite', {email: data.get('email'), role: data.get('role')});
+      const link = location.origin + location.pathname + '#invitacion=' + result.token;
+      modal('Invitación generada', '<p>Copiá este enlace para la persona invitada.</p>' +
+        field('Enlace privado', '<input type="url" value="' + escape(link) + '" readonly>'));
+      $('input', dialog).select();
+      render();
+    });
+    $('#team-users').onclick = event => {
+      const target = event.target.closest('[data-disable],[data-revoke]');
+      if (!target) return;
+      const email = target.dataset.disable || target.dataset.revoke;
+      const action = target.dataset.disable ? 'disable-user' : 'revoke-invite';
+      const label = target.dataset.disable ? 'Desactivar cuenta' : 'Revocar invitación';
+      modal(label, '<form><p>' + escape(email) + '</p><p class="error" role="alert"></p>' +
+        '<button class="btn danger" type="submit">Confirmar</button></form>');
+      handleSubmit($('form', dialog), async () => {
+        await pilotRequest(action, {email});
+        dialog.close();
+        render();
+        notify('Acceso actualizado.');
+      });
+    };
+  } catch (issue) {
+    if (route === 'equipo') content.textContent = issue.message;
+  }
+}
+
 function setupShell() {
+  if (state.user) {
+    $('#workspace-label').textContent = 'Piloto interno';
+    const bar = $('#pilot-bar');
+    bar.innerHTML = '<p><strong>' + escape(state.user.email) + '</strong> · ' + roleNames[state.user.role] + '</p>' +
+      button('Cerrar sesión', '', '', 'id="logout"');
+    bar.hidden = false;
+    $('#logout').onclick = async () => {
+      try {
+        await pilotRequest('logout', {});
+        location.reload();
+      } catch (issue) {
+        notify(issue.message, true);
+      }
+    };
+  }
   if (state.demo) {
     $('#workspace-label').textContent = 'Espacio de demostración';
     $('#demo-banner').hidden = false;
@@ -722,10 +840,16 @@ function setupShell() {
 
 try {
   const response = await fetch('/api/state');
-  if (!response.ok) throw new Error('No se pudo conectar con Trebolium.');
-  state = await response.json();
-  setupShell();
-  render();
+  if (!response.ok && response.status !== 401) throw new Error('No se pudo conectar con Trebolium.');
+  if (response.ok) state = await response.json();
+  const invite = (response.status === 401 || state?.user) && location.hash.match(/^#invitacion=([A-Za-z0-9_-]{43})$/);
+  if (invite) history.replaceState(null, '', location.pathname + location.search);
+  if (response.status === 401 || invite) {
+    renderSignIn(invite ? invite[1] : '');
+  } else {
+    setupShell();
+    render();
+  }
 } catch (issue) {
   content.textContent = issue.message;
 }

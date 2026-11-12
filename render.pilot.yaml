@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: trebolium-piloto
+    runtime: node
+    region: oregon
+    plan: 0.5c-512mb
+    autoDeployTrigger: 'off'
+    buildCommand: npm ci
+    startCommand: npm run pilot
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: ">=24.0.0 <25"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: trebolium-piloto-db
+          property: connectionString
+      - key: TREBOLIUM_ADMIN_EMAIL
+        sync: false
+      - key: TREBOLIUM_BOOTSTRAP_TOKEN
+        sync: false
+
+databases:
+  - name: trebolium-piloto-db
+    region: oregon
+    plan: 0.1c-256mb
+    diskSizeGB: 1
+    storageAutoscalingEnabled: false
+    ipAllowList: []
